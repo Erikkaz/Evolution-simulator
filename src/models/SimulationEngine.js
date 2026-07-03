@@ -117,4 +117,145 @@ export class SimulationEngine
     return { creatures, foods };
   }
 
+   // Один шаг симуляции 
+   step(creatures, foods, width, height) 
+   {
+    // Если существ нет
+    if (!creatures.length) 
+      return { creatures: [], foods, stats: null };
+
+    // Копируем сущности
+    let newCreatures = creatures.map(c => new Creature(c.id, c.x, c.y, c.energy, c.genome, c.age, c.parentId));
+    let newFoods = foods.map(f => {
+      if (f.constructor && f.constructor.name !== 'Food')
+      {
+        const Cls = f.constructor;
+        return new Cls(f.x, f.y);
+      }
+      return { x: f.x, y: f.y, energy: f.energy };
+    });
+
+    // Будущие потомки
+    const toAddChildren = [];
+
+     // Параметры конфигурации
+    const {
+      baseCost, speedCost, reproduceThreshold, reproduceEnergyShare,
+      maxFood, minFood, foodRegenMin, foodRegenMax, maxAge, mutationFactor,
+      maxPopulation  
+    } = this.config;
+
+    // Движение существ 
+    for (let i = 0; i < newCreatures.length; i++) {
+      const c = newCreatures[i];
+
+      // Мёртвое существо пропускаем
+      if (c.energy <= 0) 
+        continue;
+
+      // Поиск ближайшей еды
+      const nearest = SimulationEngine.findNearestFood(c, newFoods);
+      if (nearest)
+      {
+        // Если еда есть — двигаемся к ней
+        const dx = nearest.x - c.x;
+        const dy = nearest.y - c.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 0.5) 
+        {
+          const stepSize = Math.min(c.genome.speed, dist);
+          const normX = dx / dist;
+          const normY = dy / dist;
+          let newX = c.x + normX * stepSize;
+          let newY = c.y + normY * stepSize;
+          let canMoveX = true, canMoveY = true;
+
+          // Проверка выхода за границы
+          if (newX < this.MARGIN || newX > width - this.MARGIN) 
+            canMoveX = false;
+          if (newY < this.MARGIN || newY > height - this.MARGIN) 
+            canMoveY = false;
+
+          // Обработка столкновения со стеной
+          if (!canMoveX && !canMoveY) 
+          {
+            // Если застряли в углу — случайное уклонение
+            const escapeAngle = Math.random() * Math.PI * 2;
+            const escapeStep = c.genome.speed * 0.5;
+            let ex = c.x + Math.cos(escapeAngle) * escapeStep;
+            let ey = c.y + Math.sin(escapeAngle) * escapeStep;
+            c.x = Math.min(Math.max(ex, this.MARGIN), width - this.MARGIN);
+            c.y = Math.min(Math.max(ey, this.MARGIN), height - this.MARGIN);
+          } 
+          else if (!canMoveX) 
+          {
+            // Двигаемся только по Y
+            c.y += normY * stepSize;
+            c.y = Math.min(height - this.MARGIN, Math.max(this.MARGIN, c.y));
+          } 
+          else if (!canMoveY) 
+          {
+            // Двигаемся только по X
+            c.x += normX * stepSize;
+            c.x = Math.min(width - this.MARGIN, Math.max(this.MARGIN, c.x));
+          } 
+          else 
+          {
+            // Свободное движение
+            c.x = newX;
+            c.y = newY;
+          }
+
+        } 
+        
+        else 
+        {
+          // Еда достигнута — поглощение
+          c.energy += nearest.energy * c.genome.efficiency;
+          newFoods = newFoods.filter(f => f !== nearest);
+        }
+
+      } 
+      
+      else 
+      {
+         // Еды нет — случайное блуждание
+        const angle = Math.random() * Math.PI * 2;
+        const stepSize = c.genome.speed * 0.5;
+        let dx = Math.cos(angle) * stepSize;
+        let dy = Math.sin(angle) * stepSize;
+        let newX = c.x + dx;
+        let newY = c.y + dy;
+
+        if (newX < this.MARGIN) 
+        {
+          newX = this.MARGIN + (this.MARGIN - newX);
+          dx = -dx;
+        } 
+        else if (newX > width - this.MARGIN)
+        {
+          newX = width - this.MARGIN - (newX - (width - this.MARGIN));
+          dx = -dx;
+        }
+
+        if (newY < this.MARGIN) 
+        {
+          newY = this.MARGIN + (this.MARGIN - newY);
+          dy = -dy;
+        } 
+        else if (newY > height - this.MARGIN) 
+        {
+          newY = height - this.MARGIN - (newY - (height - this.MARGIN));
+          dy = -dy;
+        }
+
+        c.x = Math.min(Math.max(newX, this.MARGIN), width - this.MARGIN);
+        c.y = Math.min(Math.max(newY, this.MARGIN), height - this.MARGIN);
+      }
+
+      // Расход энергии за шаг 
+      c.energy -= baseCost + c.genome.speed * speedCost;
+      c.age++; // Увеличиваем возраст
+    }
+  }
 }
