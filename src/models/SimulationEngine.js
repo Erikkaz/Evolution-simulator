@@ -118,8 +118,8 @@ export class SimulationEngine
   }
 
    // Один шаг симуляции 
-   step(creatures, foods, width, height) 
-   {
+  step(creatures, foods, width, height) 
+  {
     // Если существ нет
     if (!creatures.length) 
       return { creatures: [], foods, stats: null };
@@ -257,5 +257,66 @@ export class SimulationEngine
       c.energy -= baseCost + c.genome.speed * speedCost;
       c.age++; // Увеличиваем возраст
     }
+
+    // Размножение с ограничением популяции 
+    // Сколько существ было живо до размножения
+    const initialAliveCount = newCreatures.filter(c => c.isAlive(maxAge)).length;
+    for (let i = 0; i < newCreatures.length; i++) 
+    {
+      const c = newCreatures[i];
+      if (!c.isAlive(maxAge)) 
+        continue; // мёртвых пропускаем
+
+      if (c.energy >= reproduceThreshold && initialAliveCount + toAddChildren.length < maxPopulation) 
+      {
+        const child = SimulationEngine.reproduce(c, mutationFactor, reproduceEnergyShare);
+        c.energy *= (1 - reproduceEnergyShare); // родитель отдаёт часть энергии
+        toAddChildren.push(child);
+      }
+    }
+
+    // Собираем всех живых (включая новорождённых)
+    let alive = newCreatures.filter(c => c.isAlive(maxAge));
+    alive.push(...toAddChildren);
+
+    // Регенерация еды
+    if (newFoods.length < minFood) 
+    {
+      const maxToAdd = maxFood - newFoods.length;
+      const randomToAdd = foodRegenMin + Math.floor(Math.random() * (foodRegenMax - foodRegenMin + 1));
+      const toAdd = Math.min(randomToAdd, maxToAdd);
+      for (let i = 0; i < toAdd; i++) 
+      {
+        const x = this.MARGIN + Math.random() * (width - 2 * this.MARGIN);
+        const y = this.MARGIN + Math.random() * (height - 2 * this.MARGIN);
+        newFoods.push(this.createRandomFood(x, y));
+      }
+    }
+
+    // Подсчёт статистики и возврат результата
+    const stats = this.calculateStats(alive);
+    return { creatures: alive, foods: newFoods, stats };
   }
+  
+  // Статистика 
+  calculateStats(creaturesList) 
+  {
+    // Если существ нет 
+    if (!creaturesList.length) {
+      return { alive: 0, avgSpeed: 0, avgVision: 0, avgEfficiency: 0 };
+    }
+
+    const n = creaturesList.length;
+    const sumSpeed = creaturesList.reduce((s, c) => s + c.genome.speed, 0);
+    const sumVision = creaturesList.reduce((s, c) => s + c.genome.vision, 0);
+    const sumEff = creaturesList.reduce((s, c) => s + c.genome.efficiency, 0);
+
+    return {
+      alive: n,
+      avgSpeed: sumSpeed / n,
+      avgVision: sumVision / n,
+      avgEfficiency: sumEff / n,
+    };
+  }
+
 }
